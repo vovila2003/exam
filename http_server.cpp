@@ -13,20 +13,19 @@
 #include <string>
 #include <fcntl.h>
 
-
-
-// std::map<pid_t, int> workers; // список worker'ов и номера soketpair к ним
-
-// ev_io *w_fd;
-// ev_io *w_client;
-// ev_signal *w_signal_term;
-// ev_signal *w_signal_int;
-// ev_io* w_accept;
-// ev_child* w_child;
-
 struct my_io {
     struct ev_io watcher;
     int sock;
+    std::map<pid_t, int>* pworkers;
+};
+
+struct my_child {
+    struct ev_child watcher;
+    std::map<pid_t, int>* pworkers;
+};
+
+struct my_signal {
+    struct ev_child watcher;
     std::map<pid_t, int>* pworkers;
 };
 
@@ -155,125 +154,45 @@ static void  child_signal_handler(struct ev_loop *loop, ev_signal *w, int revent
 }
 */
 
-
-
-void read_cb (struct ev_loop *loop, struct ev_io *watcher, int revents) {
-  /*  char buffer[1024];
-    size_t r = recv(watcher->fd, buffer, 1024, MSG_NOSIGNAL);
-    if (r < 0) 
-        return;
-    else if (r == 0) {
-        ev_io_stop(loop, watcher);
-        free(watcher);
-        return;
-    } else {
-        send(watcher->fd, buffer, r, MSG_NOSIGNAL);
-    }
-*/
-}
-
-/*
-static void newfd_cb(struct ev_loop *loop, struct ev_io *watcher, int revents){
-    struct my_io *w = (struct my_io*) watcher;
-   
-    int fd;
-    char buf[16];
-    ssize_t size;
-    // int sock = w->sock;
-    // std::cout << "Socket2 = " << sock << std::endl << std::flush;
-    size = sock_fd_read(sock, buf, sizeof(buf), &fd);
-    if (fd != -1) {
-        // обработка входящего дискриптора
-        std::cout << "Worker (newfd_cb):процесс " << getpid() << " принял дескриптор " << fd << std::endl;   
-        std::cout << std::flush;
-        char buffer[3];
-        strcpy(buffer, "Hi");
-        buffer[3] = '\0';
-        send(fd, buffer, 3, MSG_NOSIGNAL);
-
-
-
-
-        // w_client = (struct ev_io*) malloc(sizeof(struct ev_io));
-        // ev_io_init(w_client, read_cb, fd, EV_READ);
-        // ev_io_start(loop, w_client);
-
-
-
-/*
-    char buffer[1024];
-    size_t r = recv(watcher->fd, buffer, 1024, MSG_NOSIGNAL);
-    if (r < 0) 
-        return;
-    else if (r == 0) {
-        ev_io_stop(loop, watcher);
-        free(watcher);
-        return;
-    } else {
-        send(watcher->fd, buffer, r, MSG_NOSIGNAL);
-    }
-*/
-/*
-        shutdown(fd, SHUT_RDWR);
-        close(fd);
-    }
-   
-}
-
-*/
-
 void childprocess(int socket) {
-    /*loop_child = ev_default_loop(0);
-    if (!loop_child) {
-        perror("Error! Can't create default loop in child!");
-        exit(EXIT_FAILURE);
-    }
 
-     
-    struct my_io my_w_fd;
-    my_w_fd.sock = socket;
-    std::cout << "Socket1 = " << socket << std::endl << std::flush;
-
-    // watcher на прием нового дескриптора
-    // w_fd = (struct ev_io*) malloc(sizeof(struct ev_io));
-    // ev_io_init(w_fd, newfd_cb, socket, EV_READ);
-
-    ev_io_init(&my_w_fd.watcher, newfd_cb, socket, EV_READ);
-    ev_io_start(loop_child, &my_w_fd.watcher);
-    // watchers на сигналы остановки worker'а
-    w_signal_term = (struct ev_signal*) malloc(sizeof(struct ev_signal));
-    w_signal_int = (struct ev_signal*) malloc(sizeof(struct ev_signal));
-    ev_signal_init (w_signal_term, child_signal_handler, SIGTERM);
-    ev_signal_init (w_signal_int, child_signal_handler, SIGINT);
-    ev_signal_start(loop_child, w_signal_term);
-    ev_signal_start(loop_child, w_signal_int);
-    std::cout << "Worker # " << getpid() << " starts event loop" << std::endl;
-    std::cout << std::flush;
-    while(true) {
-        ev_run(loop_child, 0);
-    }*/
-
-
-
-
-// ----test-----------------------------------------
     int fd;
     char buf[16];
     ssize_t size;
     char buffer[4];
     strcpy(buffer, "Hi\n");
     buffer[4] = '\0';
-    std::cerr << "Процесс " << getpid() << " запустился, сокет = " << socket << std::endl << std::flush;
+    // std::cerr << "Процесс " << getpid() << " запустился, сокет = " << socket << std::endl << std::flush;
     for(;;) {
         size = sock_fd_read(socket, buf, sizeof(buf), &fd);
         if (size <= 0)
             break;
         if (fd != -1) {
-            std::cerr << "Worker (childprocess):процесс " << getpid() << " принял дескриптор " << fd << std::endl<< std::flush;
+        	// обработка запроса
+
+
+			/*
+			    char buffer[1024];
+			    size_t r = recv(watcher->fd, buffer, 1024, MSG_NOSIGNAL);
+			    if (r < 0) 
+			        return;
+			    else if (r == 0) {
+			        ev_io_stop(loop, watcher);
+			        free(watcher);
+			        return;
+			    } else {
+			        send(watcher->fd, buffer, r, MSG_NOSIGNAL);
+			    }
+			*/
+
+            // std::cerr << "Worker (childprocess):процесс " << getpid() << " принял дескриптор " << fd << std::endl<< std::flush;
+            
+        	// посылка результата
             send(fd, buffer, 4, MSG_NOSIGNAL);
+            
+            // закрытие соединения
             shutdown(fd, SHUT_RDWR);
             close(fd);
-            // sock_fd_write(socket, buf, sizeof(buf), &fd);
         }
     }
 
@@ -293,40 +212,9 @@ void create_child(std::map<pid_t, int> & workers) {
     } else if (pid != 0) { // parent
         close(sv[1]);
         workers.emplace(std::make_pair(pid, sv[0]));
-        // sock_fd_write(sv[0], (void*) "1", 1, -1);
     } else if (pid == 0){ // child
         close(sv[0]);
         childprocess(sv[1]);
-    }
-}
-/*
-static void sigchld_handler(struct ev_loop *loop, ev_child *w, int revents) { // действия при смерти worker
-    int pid = w->rpid;
-
-    if (pid < 0) {
-        perror("Error on waitpid");
-    } else {
-        //закрываем socketpair
-        close(workers[pid]);
-        // erase from map
-        workers.erase(workers.find(pid));
-        std::cout << "Master Process (sigchld_handler): pid = " << pid << " deleted " << std::endl;
-        std::cout << std::flush;
-        create_child(); // создаем нового worker
-    }
-
-    /*
-    for (auto it = workers.begin(); it != workers.end(); it++){
-        std::cout << "pid = " << it->first << "; sv = " << it->second << std::endl;
-    }
-    std::cout << std::endl;
-    */
-// }
-
-void close_all_socketpair_and_kill_child(std::map<pid_t, int> & workers){
-    for (auto it = workers.cbegin(); it != workers.cend(); it++){
-        kill(SIGTERM, it->first);
-        close(it->second);
     }
 }
 
@@ -338,31 +226,59 @@ void print_all_workers(std::map<pid_t, int> & workers) {
     std::cout << "--------------------"<< std::endl<< std::flush;
 }
 
+static void sigchld_handler(struct ev_loop *loop, ev_child *watcher, int revents) { // действия при смерти worker
+    struct my_child *w = (struct my_child*) watcher;
+
+    int pid = w->watcher.rpid;
+
+    if (pid < 0) {
+        perror("Error on waitpid");
+    } else {
+        //закрываем socketpair
+        close(w->pworkers->at(pid));
+        // erase from map
+        w->pworkers->erase(w->pworkers->find(pid));
+        // std::cout << "Master Process (sigchld_handler): pid = " << pid << " deleted " << std::endl;
+        // std::cout << std::flush;
+        create_child(*(w->pworkers)); // создаем нового worker
+        print_all_workers(*(w->pworkers));
+    }
+}
+
+void close_all_socketpair_and_kill_child(std::map<pid_t, int> & workers){
+    for (auto it = workers.cbegin(); it != workers.cend(); it++){
+        kill(SIGTERM, it->first);
+        close(it->second);
+    }
+}
+
+
 void accept_cb(struct ev_loop *loop, struct ev_io * watcher, int revents) {
     struct my_io *w = (struct my_io*) watcher;
     
     static int current_worker = 0;
-    // if (current_worker == 0)
-    //     current_worker++;
 
-    std::cout << "current_worker = " << current_worker << std::endl << std::flush;
     int client_sd = accept(w->watcher.fd, 0, 0);
     if (client_sd <= 0) {
         return;
     }
-//test
-    // print_all_workers(*(w->pworkers)); // test
-//test end    
+
     auto it = w->pworkers->cbegin();
     for (int i = 0; (i < current_worker) && (it!= w->pworkers->cend()); ++i)
         ++it;
-    std::cout << "first = " << it->first << ", second = " << it->second << std::endl << std::flush;
+
     sock_fd_write(it->second, (void*) "1", 1, client_sd);
     close(client_sd);
 
+//test
+    // std::cout << "current_worker = " << current_worker << std::endl << std::flush;
+    // print_all_workers(*(w->pworkers)); // test
+    // std::cout << "first = " << it->first << ", second = " << it->second << std::endl << std::flush;
     // std::cerr << "Master Process (accept_cb): процессу " << it->first 
     //           << " отправил fd " << client_sd << " по sv " << it->second
     //           << "; current_worker = " << current_worker << std::endl << std::flush;
+//test end    
+    
     current_worker = (current_worker + 1) % w->pworkers->size();
 }
 
@@ -424,20 +340,22 @@ int main(int argc, char const *argv[])
     my_w_accept.pworkers = &workers;
     ev_io_init(&my_w_accept.watcher, accept_cb, master_socket, EV_READ);
     ev_io_start(loop_master, &my_w_accept.watcher);
-/*
-    w_child = (ev_child*) malloc(sizeof(struct ev_child));
-    ev_child_init (w_child, sigchld_handler, 0, 0);
-    ev_child_start(loop_master, w_child);
-*/
 
-    // ev_io w_close_fd;
-    // ev_io_init(&w_close_fd, close_fd_cd, 
-    // ev_io_start ev_io
+    // watcher на восстановление worker'ов
+
+    struct my_child my_w_child;
+    my_w_child.pworkers = &workers;
+    ev_child_init (&my_w_child.watcher, sigchld_handler, 0, 0);
+    ev_child_start(loop_master, &my_w_child.watcher);
+
+    // watcher на убийство всех worker'ов
 
 
     while(1) {
         ev_run(loop_master, 0);
     }
+
+
 
     return 0;
 }
