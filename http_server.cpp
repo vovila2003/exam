@@ -25,7 +25,7 @@ struct my_child {
 };
 
 struct my_signal {
-    struct ev_child watcher;
+    struct ev_signal watcher;
     std::map<pid_t, int>* pworkers;
 };
 
@@ -226,6 +226,23 @@ void print_all_workers(std::map<pid_t, int> & workers) {
     std::cout << "--------------------"<< std::endl<< std::flush;
 }
 
+void close_all_socketpair_and_kill_child(std::map<pid_t, int> & workers){
+    for (auto it = workers.cbegin(); it != workers.cend(); ++it){
+        close(it->second);
+        kill(it->first, SIGTERM);
+        int status;
+        waitpid(it->first, &status, 0);
+    }
+}
+
+static void signals_handler(struct ev_loop *loop, ev_signal *watcher, int revents) { // действия при смерти worker
+    struct my_signal *w = (struct my_signal*) watcher;
+	ev_break(loop, EVBREAK_ALL);
+	close_all_socketpair_and_kill_child(*(w->pworkers));
+	exit(EXIT_FAILURE);
+}
+
+
 static void sigchld_handler(struct ev_loop *loop, ev_child *watcher, int revents) { // действия при смерти worker
     struct my_child *w = (struct my_child*) watcher;
 
@@ -245,12 +262,6 @@ static void sigchld_handler(struct ev_loop *loop, ev_child *watcher, int revents
     }
 }
 
-void close_all_socketpair_and_kill_child(std::map<pid_t, int> & workers){
-    for (auto it = workers.cbegin(); it != workers.cend(); it++){
-        kill(SIGTERM, it->first);
-        close(it->second);
-    }
-}
 
 
 void accept_cb(struct ev_loop *loop, struct ev_io * watcher, int revents) {
@@ -335,6 +346,7 @@ int main(int argc, char const *argv[])
     }
     print_all_workers(workers);
 
+    // watcher на прием соединений
     struct my_io my_w_accept;
     my_w_accept.sock = 0;
     my_w_accept.pworkers = &workers;
@@ -342,14 +354,17 @@ int main(int argc, char const *argv[])
     ev_io_start(loop_master, &my_w_accept.watcher);
 
     // watcher на восстановление worker'ов
-
     struct my_child my_w_child;
     my_w_child.pworkers = &workers;
     ev_child_init (&my_w_child.watcher, sigchld_handler, 0, 0);
     ev_child_start(loop_master, &my_w_child.watcher);
 
     // watcher на убийство всех worker'ов
-
+    struct my_signal my_w_signal;
+    my_w_signal.pworkers = &workers;
+    ev_signal_init (&my_w_signal.watcher, signals_handler, SIGINT);
+    ev_signal_init (&my_w_signal.watcher, signals_handler, SIGTERM);
+    ev_signal_start(loop_master, &my_w_signal.watcher);
 
     while(1) {
         ev_run(loop_master, 0);
