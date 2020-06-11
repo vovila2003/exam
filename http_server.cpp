@@ -12,8 +12,9 @@
 #include <ev.h>
 #include <string>
 #include <fcntl.h>
+#include <sys/stat.h>
 
-struct globalArgs_t { //// -h <ip> -p <port> -d <directory>
+struct globalArgs_t { 
 	char ip[INET_ADDRSTRLEN];
 	int port;
 	char path[1024];
@@ -144,21 +145,6 @@ ssize_t sock_fd_read(int sock, void *buf, ssize_t bufsize, int *fd)
     }
     return size;
 }
-/*
-static void  child_signal_handler(struct ev_loop *loop, ev_signal *w, int revents) {
-    ev_signal_stop(loop, w_signal_term);
-    ev_signal_stop(loop, w_signal_int);
-    ev_io_stop(loop, w_fd);
-    ev_break(loop, EVBREAK_ALL);
-    free(w_fd);
-    free(w_client);
-    free(w_signal_term);
-    free(w_signal_int);
-    std::cout << "Worker: process " << getpid() << " die "<< std::endl;
-    std::cout << std::flush;
-    exit(EXIT_FAILURE);
-}
-*/
 
 void childprocess(int socket) {
 
@@ -305,7 +291,7 @@ int main(int argc, char **argv)
     // распарсить строку
 	globalArgs.port = 12345;
 	strcpy(globalArgs.ip, "127.0.0.1");
-	strcpy(globalArgs.path, "");
+	strcpy(globalArgs.path, ".");
 	int rez=0;
 
 	while ( (rez = getopt(argc,argv,"h:p:d:")) != -1){
@@ -322,12 +308,59 @@ int main(int argc, char **argv)
 		default: break;
         };
 	};
+	// std::cout << "ip = " << globalArgs.ip << "; port = " << globalArgs.port << "; dir = " << globalArgs.path << std::endl << std::flush;
 
-	std::cout << "ip = " << globalArgs.ip << "; port = " << globalArgs.port << "; dir = " << globalArgs.path << std::endl << std::flush;
+    // проверка правильности заполнения аргументов
+    
+    int dst;
+    int res = inet_pton(AF_INET, globalArgs.ip, &dst);
 
+    // std:: cout << "res = " << res << " addr.sin_addr = " << addr.sin_addr.s_addr << std::endl << std::flush;
+    if (res == 0) {
+    	std::cerr << "Error! Bad ip-address!" << std::endl;
+        exit(EXIT_FAILURE);
+    }
+    if (res < 0) {
+        perror("Error! Incorrect ip-address!");
+        exit(EXIT_FAILURE);
+    }
+    if (globalArgs.port < 0 || globalArgs.port > 65536) {
+    	std::cerr << "Error! Bad port!" << std::endl;
+        exit(EXIT_FAILURE);
+    }
 
-    // создаем демона
+    // struct stat sb;
 
+    // if (stat(globalArgs.path, &sb) != 0 || !S_ISDIR(sb.st_mode)) {
+    // 	std::cerr << "Error! Directory doesn't exists!" << std::endl;
+    //     exit(EXIT_FAILURE);
+    // }
+
+     // создаем демона
+	pid_t pid, sid;
+    pid = fork();
+    if (pid < 0) {
+    	perror("Fork canceled");
+        exit(EXIT_FAILURE); // ошибка 
+    }
+    if (pid > 0) { //parent
+            exit(EXIT_SUCCESS);
+    }
+	umask(0); // права по умолчанию - полный доступ
+	sid = setsid();
+	if (sid < 0) {
+		perror("Setsid canceled");
+		exit(EXIT_FAILURE);
+	}
+
+	// if ((chdir("/tmp")) < 0) { // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	// 	perror("Chdir canceled");
+	// 	exit(EXIT_FAILURE); 
+	// }
+
+	close(STDIN_FILENO);
+	close(STDOUT_FILENO);
+	close(STDERR_FILENO);
 
     // MASTER PROCESS
 
@@ -338,25 +371,10 @@ int main(int argc, char **argv)
     addr.sin_family = AF_INET;
 
     addr.sin_port = htons(globalArgs.port);
-    int res = inet_pton(AF_INET, globalArgs.ip, &addr.sin_addr);
+    inet_pton(AF_INET, globalArgs.ip, &addr.sin_addr);
 
-    std:: cout << "res = " << res << " addr.sin_addr = " << addr.sin_addr.s_addr << std::endl << std::flush;
-    if (res == 0) {
-    	std::cerr << "Error! Bad ip-address!" << std::endl;
-        close(master_socket); // закрываем socket
-        exit(EXIT_FAILURE);
-    }
-    if (res < 0) {
-        perror("Error! Incorrect ip-address!");
-        close(master_socket); // закрываем socket
-        exit(EXIT_FAILURE);
-    }
-    if (globalArgs.port < 0 || globalArgs.port > 65536) {
-    	std::cerr << "Error! Bad port!" << std::endl;
-        close(master_socket); // закрываем socket
-        exit(EXIT_FAILURE);
-    }
-
+    // std:: cout << "res = " << res << " addr.sin_addr = " << addr.sin_addr.s_addr << std::endl << std::flush;
+   
     bind(master_socket, (struct sockaddr *) &addr, sizeof(addr));
     set_nonblock(master_socket);
     int enable = 1;
@@ -380,8 +398,9 @@ int main(int argc, char **argv)
         close_all_socketpair_and_kill_child(workers);
         exit(1);
     }
-    print_all_workers(workers);
-
+//test
+    // print_all_workers(workers);
+//test end
     // watcher на прием соединений
     struct my_io my_w_accept;
     my_w_accept.sock = 0;
@@ -406,7 +425,5 @@ int main(int argc, char **argv)
         ev_run(loop_master, 0);
     }
 
-
-
-    return 0;
+    exit(EXIT_SUCCESS);
 }
