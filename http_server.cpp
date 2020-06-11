@@ -11,6 +11,7 @@
 #include <netinet/in.h>
 #include <ev.h>
 #include <string>
+#include <cstring>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sstream>
