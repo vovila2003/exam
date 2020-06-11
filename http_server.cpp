@@ -13,6 +13,12 @@
 #include <string>
 #include <fcntl.h>
 
+struct globalArgs_t { //// -h <ip> -p <port> -d <directory>
+	char ip[INET_ADDRSTRLEN];
+	int port;
+	char path[1024];
+} globalArgs;
+
 struct my_io {
     struct ev_io watcher;
     int sock;
@@ -293,13 +299,31 @@ void accept_cb(struct ev_loop *loop, struct ev_io * watcher, int revents) {
     current_worker = (current_worker + 1) % w->pworkers->size();
 }
 
-int main(int argc, char const *argv[])
+int main(int argc, char **argv)
 {
-	
+	// -h <ip> -p <port> -d <directory>
     // распарсить строку
-    char ip[INET_ADDRSTRLEN];
-    strcpy(ip,"127.0.0.1");
-    int port = 12345;
+	globalArgs.port = 12345;
+	strcpy(globalArgs.ip, "127.0.0.1");
+	strcpy(globalArgs.path, "");
+	int rez=0;
+
+	while ( (rez = getopt(argc,argv,"h:p:d:")) != -1){
+		switch (rez){
+		case 'h':
+			strcpy(globalArgs.ip, optarg);
+			break;
+		case 'p': 
+			globalArgs.port = atoi (optarg);
+			break;
+		case 'd': 
+			strcpy(globalArgs.path, optarg);
+			break;
+		default: break;
+        };
+	};
+
+	std::cout << "ip = " << globalArgs.ip << "; port = " << globalArgs.port << "; dir = " << globalArgs.path << std::endl << std::flush;
 
 
     // создаем демона
@@ -312,11 +336,23 @@ int main(int argc, char const *argv[])
     struct sockaddr_in addr;
     bzero(&addr, sizeof(addr));
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    int res = inet_pton(AF_INET, ip, &addr.sin_addr);
 
+    addr.sin_port = htons(globalArgs.port);
+    int res = inet_pton(AF_INET, globalArgs.ip, &addr.sin_addr);
+
+    std:: cout << "res = " << res << " addr.sin_addr = " << addr.sin_addr.s_addr << std::endl << std::flush;
+    if (res == 0) {
+    	std::cerr << "Error! Bad ip-address!" << std::endl;
+        close(master_socket); // закрываем socket
+        exit(EXIT_FAILURE);
+    }
     if (res < 0) {
         perror("Error! Incorrect ip-address!");
+        close(master_socket); // закрываем socket
+        exit(EXIT_FAILURE);
+    }
+    if (globalArgs.port < 0 || globalArgs.port > 65536) {
+    	std::cerr << "Error! Bad port!" << std::endl;
         close(master_socket); // закрываем socket
         exit(EXIT_FAILURE);
     }
