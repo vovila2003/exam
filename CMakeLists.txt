@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 2.8)
+project(final)
+set(SOURCE_EXE http_server.cpp)
+set(LIBS "-lev")
+add_executable(final ${SOURCE_EXE})
+target_link_libraries(final ${LIBS})
