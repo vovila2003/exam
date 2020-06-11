@@ -13,6 +13,8 @@
 #include <string>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sstream>
+#include <fstream>
 
 struct globalArgs_t { 
 	char ip[INET_ADDRSTRLEN];
@@ -146,41 +148,77 @@ ssize_t sock_fd_read(int sock, void *buf, ssize_t bufsize, int *fd)
     return size;
 }
 
+
+
 void childprocess(int socket) {
 
     int fd;
     char buf[16];
     ssize_t size;
-    char buffer[4];
-    strcpy(buffer, "Hi\n");
-    buffer[4] = '\0';
-    // std::cerr << "Процесс " << getpid() << " запустился, сокет = " << socket << std::endl << std::flush;
+        // std::cerr << "Процесс " << getpid() << " запустился, сокет = " << socket << std::endl << std::flush;
     for(;;) {
         size = sock_fd_read(socket, buf, sizeof(buf), &fd);
         if (size <= 0)
             break;
         if (fd != -1) {
         	// обработка запроса
+        	// читаем из сокета HTTP запрос
+		    char buffer[1024];
+		    size_t r = recv(fd, buffer, 1024, MSG_NOSIGNAL);
+		    if (r < 0) 
+		        break;
+		    else if (r != 0) {
+		        // parse HTTP
+		    	std::string str(buffer);
+				std::stringstream ss(str);
+				std::string temp;
+				std::getline(ss, temp);
+				size_t pos = temp.find(" ",0);
+				size_t pos2 = temp.find(" ", pos + 1);
+				size_t pos3 = temp.find("?", pos + 1);
+				std::string command = temp.substr(0, pos);
+				// std::cout << "command = " << command << std::endl << std::flush;
+				if (command.compare("GET") == 0){ // пришла команда GET
+					std::string content;
+					if (pos3 < pos2){
+						content = temp.substr(pos + 2, pos3 - pos - 2);
+					} else {
+						content = temp.substr(pos + 2, pos2 - pos - 2);
+					}
+					// std::cout << "content = " << content << std::endl << std::flush;
+					
+					// std::cout << "current_dir = " << get_current_dir_name() << std::endl << std::flush;
 
-
-			/*
-			    char buffer[1024];
-			    size_t r = recv(watcher->fd, buffer, 1024, MSG_NOSIGNAL);
-			    if (r < 0) 
-			        return;
-			    else if (r == 0) {
-			        ev_io_stop(loop, watcher);
-			        free(watcher);
-			        return;
-			    } else {
-			        send(watcher->fd, buffer, r, MSG_NOSIGNAL);
-			    }
-			*/
-
+					int file = open(content.c_str(), O_RDONLY, 0666);
+					std::stringstream out;
+					if (file == -1) { // Not Found
+						out << "HTTP/1.0 404 NOT FOUND";
+						out << "\r\n";
+						out << "Context-length: ";
+						out << 0;
+						out << "\r\n";
+						out << "Context-type: text/html";
+						out << "\r\n\r\n";
+					} else { // OK
+						close(file);
+						std::ifstream f(content.c_str());
+						std::stringstream tmp;
+						tmp << f.rdbuf();
+						std::string data(tmp.str());
+						f.close();
+						out << "HTTP/1.0 200 OK";
+						out << "\r\n";
+						out << "Content-length: ";
+						out << data.size();
+						out << "\r\n";
+						out << "Content-Type: text/html";
+						out << "\r\n\r\n";
+						out << data;
+					}
+			        send(fd, out.str().c_str(), out.str().length(), MSG_NOSIGNAL);
+				}
+		    }
             // std::cerr << "Worker (childprocess):процесс " << getpid() << " принял дескриптор " << fd << std::endl<< std::flush;
-            
-        	// посылка результата
-            send(fd, buffer, 4, MSG_NOSIGNAL);
             
             // закрытие соединения
             shutdown(fd, SHUT_RDWR);
@@ -329,13 +367,6 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
-    // struct stat sb;
-
-    // if (stat(globalArgs.path, &sb) != 0 || !S_ISDIR(sb.st_mode)) {
-    // 	std::cerr << "Error! Directory doesn't exists!" << std::endl;
-    //     exit(EXIT_FAILURE);
-    // }
-
      // создаем демона
 	pid_t pid, sid;
     pid = fork();
@@ -353,10 +384,11 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
-	// if ((chdir("/tmp")) < 0) { // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	// 	perror("Chdir canceled");
-	// 	exit(EXIT_FAILURE); 
-	// }
+
+	if ((chdir(globalArgs.path)) < 0) {
+		std::cerr << "Error! Directory doesn't exists!" << std::endl;
+        exit(EXIT_FAILURE);
+	}
 
 	close(STDIN_FILENO);
 	close(STDOUT_FILENO);
